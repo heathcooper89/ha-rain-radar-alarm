@@ -58,20 +58,29 @@ class RadarManager:
 
     # ------------------------------------------------------------------ lifecycle
     async def async_start(self) -> None:
+        """Load the saved radar list and start polling. No network here."""
         stored = await self._store.async_load()
         if stored:
             self.registry = stored.get("sites", [])
             self.registry_updated = dt_util.parse_datetime(stored.get("updated", ""))
+        self._unsub = async_track_time_interval(
+            self.hass, self._async_poll, RADAR_POLL, cancel_on_shutdown=True)
+
+    async def async_ensure_sites(self) -> None:
+        """Read BoM's radar list if there is none saved, or it's over a week old."""
         if not self.registry or self.registry_updated is None or (
             dt_util.utcnow() - self.registry_updated > SITES_REFRESH
         ):
             await self.async_refresh_sites()
-        self._unsub = async_track_time_interval(self.hass, self._async_poll, RADAR_POLL)
 
-    async def async_stop(self) -> None:
+    @callback
+    def async_stop(self) -> None:
         if self._unsub:
             self._unsub()
             self._unsub = None
+
+    async def async_remove_stored(self) -> None:
+        await self._store.async_remove()
 
     async def async_refresh_sites(self) -> None:
         """Re-read BoM's radar locations table; keep the old list if that fails."""
@@ -128,8 +137,7 @@ class RadarManager:
             self._needed.pop(rid, None)
             self.products.pop(rid, None)      # free memory for radars nobody needs
             self._raw_latest.pop(rid, None)
-        if self.registry_updated and dt_util.utcnow() - self.registry_updated > SITES_REFRESH:
-            await self.async_refresh_sites()
+        await self.async_ensure_sites()
         if self._needed and await self._async_fetch(list(self._needed)):
             self._notify()
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import EVENT_STATE_CHANGED, Platform
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_state_change_event
@@ -61,13 +61,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: RainRadarConfigEntry) ->
         data.coordinators[pid] = RainLocationCoordinator(
             hass, entry, manager, pid, state.name if state else pid, pid, fallback)
 
-    # A failed first refresh (no location yet, BoM unreachable) leaves that location
-    # unavailable and retrying; it never blocks Home Assistant from starting.
-    for coord in data.coordinators.values():
-        await coord.async_refresh()
-
     entry.runtime_data = data
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    async def _first_refresh() -> None:
+        # Network work happens here, after setup, so a slow or unreachable BoM never delays
+        # Home Assistant starting. Entities show unavailable until their first forecast.
+        await manager.async_ensure_sites()
+        for coord in data.coordinators.values():
+            await coord.async_refresh()
+
+    entry.async_create_background_task(hass, _first_refresh(), f"{DOMAIN} first refresh")
 
     @callback
     def _new_frames() -> None:
@@ -88,13 +92,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: RainRadarConfigEntry) ->
         entry.async_on_unload(async_track_state_change_event(hass, people, _person_moved))
 
     @callback
+    def _is_new_person(event_data: EventStateChangedData) -> bool:
+        return (event_data["old_state"] is None and event_data["entity_id"].startswith("person.")
+                and event_data["entity_id"] not in data.coordinators)
+
+    @callback
     def _person_added(event: Event[EventStateChangedData]) -> None:
-        eid = event.data["entity_id"]
-        if (eid.startswith("person.") and event.data["old_state"] is None
-                and eid not in data.coordinators and not option(entry, CONF_PERSONS)):
+        if not option(entry, CONF_PERSONS):  # tracking everyone: pick up the new person
             hass.config_entries.async_schedule_reload(entry.entry_id)
 
-    entry.async_on_unload(hass.bus.async_listen("state_changed", _person_added))
+    entry.async_on_unload(
+        hass.bus.async_listen(EVENT_STATE_CHANGED, _person_added, event_filter=_is_new_person))
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     entry.async_on_unload(manager.async_stop)
     return True
@@ -106,3 +114,8 @@ async def _options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: RainRadarConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Delete the saved radar list when the integration is removed."""
+    await RadarManager(hass, settings_for(entry), option(entry, CONF_RADAR_RANGE)).async_remove_stored()

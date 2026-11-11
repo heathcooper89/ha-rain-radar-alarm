@@ -1,6 +1,7 @@
 """Run the integration inside Home Assistant with BoM's FTP server and Open-Meteo faked."""
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import io
 from pathlib import Path
@@ -128,7 +129,7 @@ async def _setup(hass, aioclient_mock, people=None, options=None):
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options or {})
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     return entry
 
 
@@ -287,3 +288,39 @@ async def test_server_without_name_patterns(hass: HomeAssistant, aioclient_mock)
     with patch.object(FakeFTP, "nlst", no_patterns):
         entry = await _setup(hass, aioclient_mock)
     assert hass.states.get(eid(hass, entry, "home", "data_source")).state == "radar"
+
+
+async def test_new_person_is_picked_up(hass: HomeAssistant, aioclient_mock) -> None:
+    entry = await _setup(hass, aioclient_mock)
+    assert list(entry.runtime_data.coordinators) == ["home"]
+    hass.states.async_set("person.kim", "home", {"friendly_name": "Kim"})
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert "person.kim" in entry.runtime_data.coordinators
+    assert hass.states.get(eid(hass, entry, "kim", "status")).state == "rain_expected"
+
+
+async def test_setup_does_not_wait_for_bom(hass: HomeAssistant, aioclient_mock) -> None:
+    """Setup returns before any network work; forecasts follow in the background."""
+    hass.config.latitude, hass.config.longitude = HOME
+    await async_setup_component(hass, "zone", {})
+    aioclient_mock.get(OM_RE, json=om_payload())
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    entry.add_to_hass(hass)
+    async def slow_bom(self) -> None:
+        await asyncio.sleep(3600)
+
+    with patch("custom_components.rain_radar_alarm.radar.RadarManager.async_ensure_sites", slow_bom):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert entry.state is config_entries.ConfigEntryState.LOADED
+        assert hass.states.get(eid(hass, entry, "home", "status")).state == "unavailable"
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_removal_deletes_saved_radar_list(hass: HomeAssistant, aioclient_mock, hass_storage) -> None:
+    entry = await _setup(hass, aioclient_mock)
+    await hass.async_block_till_done()
+    assert f"{DOMAIN}.radar_sites" in hass_storage
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert f"{DOMAIN}.radar_sites" not in hass_storage

@@ -1,5 +1,7 @@
 # Rain Radar Alarm
 
+<img src="https://raw.githubusercontent.com/heathcooper89/ha-rain-radar-alarm/main/custom_components/rain_radar_alarm/brand/icon.png" alt="Rain Radar Alarm icon" width="96" align="right">
+
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Validate](https://github.com/heathcooper89/ha-rain-radar-alarm/actions/workflows/validate.yml/badge.svg)](https://github.com/heathcooper89/ha-rain-radar-alarm/actions/workflows/validate.yml)
 [![Tests](https://github.com/heathcooper89/ha-rain-radar-alarm/actions/workflows/tests.yml/badge.svg)](https://github.com/heathcooper89/ha-rain-radar-alarm/actions/workflows/tests.yml)
@@ -8,7 +10,7 @@ A Home Assistant custom integration that warns you before it rains, at home and 
 
 All the work happens inside Home Assistant. There is no server to run, no account and no API key.
 
-Tested with Home Assistant 2026.2. The integration icon shows from Home Assistant 2026.3.
+Needs Home Assistant 2026.2 or newer; tested on 2026.2 and 2026.10. Home Assistant shows the integration's icon from 2026.3.
 
 ## What you get
 
@@ -84,7 +86,10 @@ A blueprint is included. Copy `blueprints/automation/rain_radar_alarm/rain_notif
 
 **This integration contains no weather data.** Each Home Assistant that installs it downloads data directly from the source, for its own household. Nothing passes through, or is stored by, anyone else.
 
-- **Bureau of Meteorology radar images and radar locations**, from BoM's [anonymous FTP service](https://www.bom.gov.au/catalogue/anon-ftp.shtml). Under the default terms of [BoM's copyright notice](https://www.bom.gov.au/copyright), you may download and use this material for personal use or within your organisation. You may **not** supply it to anyone else or use it for any commercial purpose. Publishing BoM data requires registering with BoM. This integration keeps radar images in memory only, never saves or re-publishes them, and shows the attribution "Radar data © Bureau of Meteorology" on its entities. If you want to use radar data commercially, talk to BoM about its registered-user services.
+- **Bureau of Meteorology radar images and radar locations**, from BoM's [anonymous FTP service](https://www.bom.gov.au/catalogue/anon-ftp.shtml). Everything on that service is covered by the default terms of [BoM's copyright notice](https://www.bom.gov.au/copyright): you *"may download, use and copy that material for personal use, or use within your organisation but you may not supply that material to any other person or use it for any commercial purpose."* BoM also says *"Users intending to publish Bureau data should do so as Registered Users."*
+  - This integration keeps radar images in memory only, never saves or re-publishes them, and credits "Radar data © Bureau of Meteorology" on its entities.
+  - You confirm personal, non-commercial use when you add the integration.
+  - For commercial use or publishing, talk to BoM about its registered-user services.
 - **Open-Meteo** forecast API (used only outside radar coverage, and only if you leave it on). Free for non-commercial use, with data under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Commercial use needs an Open-Meteo subscription. Attribution: "Weather data by Open-Meteo.com".
 
 This project is not affiliated with, or endorsed by, the Bureau of Meteorology or Open-Meteo. It does not use their names or logos as branding.
@@ -93,7 +98,11 @@ This project is not affiliated with, or endorsed by, the Bureau of Meteorology o
 - FTP requests to `ftp.bom.gov.au` for radar images, which carry no location information.
 - Only when the fallback is used, a request to `api.open-meteo.com` with the location rounded to 2 decimal places (about 1 km).
 
-**Being a good neighbour:** BoM asks users to consider how often its products update. This integration downloads each new frame once, checks every 5 minutes (BoM publishes every 5 to 10 minutes), fetches only the radars in use, and backs off by itself when BoM can't be reached.
+**Light on BoM's servers:** it uses BoM's published FTP service, not the BoM website.
+- It checks every 5 minutes; BoM publishes a new frame every 5 to 10 minutes.
+- It fetches only the radars someone is near, and downloads each frame once.
+- It reads the radar locations table once a week.
+- When BoM can't be reached, it waits 5, 10, 20 and then 40 minutes between tries, then once an hour.
 
 ## Troubleshooting
 
@@ -107,6 +116,10 @@ This project is not affiliated with, or endorsed by, the Bureau of Meteorology o
 
 Diagnostics files round locations to about 10 km and leave out people's names, so they're safe to attach to an issue.
 
+## Removing
+
+Settings → Devices & services → Rain Radar Alarm → ⋮ → **Delete**. This also deletes the saved radar locations. Then remove it in HACS or the Marketplace (or delete `custom_components/rain_radar_alarm`) and restart Home Assistant. If you copied the blueprint, delete it from `config/blueprints/automation/rain_radar_alarm/`.
+
 ## Development
 
 ```bash
@@ -114,9 +127,15 @@ pip install -r requirements_test.txt
 pytest
 ```
 
-The tests run the integration inside Home Assistant with a fake BoM FTP server serving a synthetic storm, and a faked Open-Meteo. They cover setup, the terms confirmation, people at home, away and without a location, a person moving into the rain, the fallback, a BoM outage and its repair notice, diagnostics, options, and the blueprint. Engine tests check motion recovery and arrival and clearing times on storms of known speed.
+The tests run the integration inside Home Assistant against a fake BoM FTP server serving a synthetic storm, and a fake Open-Meteo. They cover:
+- setup and the terms confirmation, including that setup doesn't wait for BoM
+- people at home, away, without a location, added later, and moving into the rain
+- the fallback, a BoM outage with its repair notice and back-off
+- diagnostics, options, removal, and the blueprint
 
-`docs/icon-options/generate_icons.py` draws the icon options; `--brand B` writes the chosen icon (option B, Radar scope) into `brand/`; A, C or D work the same way.
+Engine tests check motion recovery, and arrival and clearing times on storms of known speed.
+
+The icon's source is `docs/icon/icon.svg`. `python3 docs/icon/generate_icon.py` redraws it and writes `brand/icon.png` and `brand/icon@2x.png`; it needs Playwright with Chromium.
 
 ## Licence
 
