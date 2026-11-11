@@ -21,10 +21,11 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DOMAIN, FALLBACK_CACHE, FALLBACK_CELL_DEG, ISSUE_AFTER_FAILURES, RADAR_IDLE_AFTER,
-    RADAR_MIN_RETRY, RADAR_POLL, RADAR_STALE_AFTER, SITES_REFRESH,
+    DOMAIN, FALLBACK_CACHE, FALLBACK_CELL_DEG, ISSUE_AFTER_FAILURES, MAP_LAYERS_REFRESH,
+    MAP_LAYERS_RETRY, MAP_LOOPS_KEPT, RADAR_IDLE_AFTER, RADAR_MIN_RETRY, RADAR_POLL,
+    RADAR_STALE_AFTER, SITES_REFRESH,
 )
-from .engine import Settings, bom, openmeteo, sites
+from .engine import Settings, bom, openmeteo, render, sites
 from .engine.product import build_product
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,6 +56,11 @@ class RadarManager:
         self._store: Store = Store(hass, STORE_VERSION, f"{DOMAIN}.radar_sites")
         self._fallback: dict[tuple, tuple[float, dict]] = {}
         self._fallback_locks: dict[tuple, asyncio.Lock] = {}
+        # Radar map: BoM's map layers per radar (PNG bytes, in memory only) and rendered loops.
+        self._layers: dict[int, tuple[float, dict[str, bytes]]] = {}
+        self._layers_failed: dict[int, float] = {}
+        self._loops: dict[tuple, render.RadarLoop] = {}
+        self._loop_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
     async def async_start(self) -> None:
@@ -139,6 +145,7 @@ class RadarManager:
             self._needed.pop(rid, None)
             self.products.pop(rid, None)      # free memory for radars nobody needs
             self._raw_latest.pop(rid, None)
+            self._layers.pop(rid, None)
         await self.async_ensure_sites()
         if self._needed and await self._async_fetch(list(self._needed)):
             self._notify()
@@ -239,6 +246,50 @@ class RadarManager:
                 self._fallback.pop(k, None)
             return data
 
+    # ------------------------------------------------------------------ radar map
+    async def async_radar_loop(self, radar_id: int, lat: float, lon: float) -> render.RadarLoop | None:
+        """The map loop for a location, drawn on first request and reused until a new frame."""
+        product = self.products.get(radar_id)
+        if not self.is_fresh(product):
+            return None
+        key = (radar_id, product["times"][-1], round(lat, 3), round(lon, 3))
+        async with self._loop_lock:
+            if (loop := self._loops.get(key)) is not None:
+                return loop
+            layers = await self._async_map_layers(radar_id)
+            loop = await self.hass.async_add_executor_job(
+                render.radar_loop, product, layers, lat, lon, dt_util.get_default_time_zone())
+            if loop is None:
+                return None
+            # Keep only loops for the newest frames.
+            for k in [k for k in self._loops if k[0] == radar_id and k[1] != key[1]]:
+                self._loops.pop(k)
+            while len(self._loops) >= MAP_LOOPS_KEPT:
+                self._loops.pop(next(iter(self._loops)))
+            self._loops[key] = loop
+            return loop
+
+    async def _async_map_layers(self, radar_id: int) -> dict[str, bytes]:
+        """BoM's map layers for a radar: fetched once, refreshed weekly, kept in memory."""
+        now = monotonic()
+        have = self._layers.get(radar_id)
+        if have and now - have[0] < MAP_LAYERS_REFRESH.total_seconds():
+            return have[1]
+        failed = self._layers_failed.get(radar_id)
+        if now < self._retry_after or (failed is not None and now - failed < MAP_LAYERS_RETRY.total_seconds()):
+            return have[1] if have else {}
+        names = render.LAYERS_BELOW + render.LAYERS_ABOVE
+        try:
+            layers = await self.hass.async_add_executor_job(
+                bom.fetch_map_layers, radar_id, self.range_code, names)
+        except Exception as err:  # noqa: BLE001 - the map still works without them
+            _LOGGER.debug("Could not read BoM map layers for radar %s: %s", radar_id, err)
+            self._layers_failed[radar_id] = now
+            return have[1] if have else {}
+        self._layers_failed.pop(radar_id, None)
+        self._layers[radar_id] = (now, layers)
+        return layers
+
     # ------------------------------------------------------------------ diagnostics
     async def async_diagnostics(self) -> dict[str, Any]:
         radars = {}
@@ -253,6 +304,8 @@ class RadarManager:
             raw = self._raw_latest.get(rid)
             if raw:
                 info["palette_check"] = await self.hass.async_add_executor_job(bom.palette_report, raw)
+            if rid in self._layers:
+                info["map_layers"] = sorted(self._layers[rid][1])
             radars[f"IDR{rid:02d}{self.range_code}"] = info
         return {
             "radar_sites": len(self.registry),
@@ -263,4 +316,5 @@ class RadarManager:
             "retry_in_seconds": max(0, round(self._retry_after - monotonic())),
             "last_error": self.last_error,
             "radars": radars,
+            "map_loops_cached": len(self._loops),
         }

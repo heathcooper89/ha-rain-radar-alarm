@@ -59,6 +59,7 @@ class RainLocationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.person = person
         self.use_fallback = use_fallback
         self.location: tuple[float, float] | None = None
+        self.radar_site: int | None = None   # radar used for the latest forecast, if any
 
     def current_location(self) -> tuple[float, float] | None:
         if self.key == HOME_KEY:
@@ -83,6 +84,7 @@ class RainLocationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         settings = self.manager.settings
 
         result = await self._radar(lat, lon, now)
+        self.radar_site = result[2]["site_id"] if result else None
         if result is None and self.use_fallback:
             try:
                 raw = await self.manager.async_open_meteo(lat, lon)
@@ -112,6 +114,12 @@ class RainLocationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             })
         return data
 
+    async def async_radar_loop(self):
+        """The radar map loop for this location, or None when no radar covers it right now."""
+        if self.radar_site is None or self.location is None:
+            return None
+        return await self.manager.async_radar_loop(self.radar_site, *self.location)
+
     async def _radar(self, lat: float, lon: float, now: dt.datetime):
         for site in self.manager.radars_for(lat, lon):
             product = await self.manager.async_product(site["id"])
@@ -125,6 +133,7 @@ class RainLocationCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return fc[0], fc[1], {
                 "type": "radar",
                 "provider": "Bureau of Meteorology",
+                "site_id": site["id"],
                 "radar_id": f"IDR{site['id']:02d}{product['range_code']}",
                 "radar_name": site["name"],
                 "distance_km": site["distance_km"],

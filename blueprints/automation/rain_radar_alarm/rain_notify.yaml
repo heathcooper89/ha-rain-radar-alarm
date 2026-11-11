@@ -28,6 +28,18 @@ blueprint:
           multiple: true
           filter:
             - integration: mobile_app
+    radar_camera:
+      name: Radar map (optional)
+      description: >
+        The "Radar map" camera from the same Rain radar device. Adds the radar loop to the
+        "rain soon" notification. Only send it to your own household's phones: BoM's terms are
+        for personal use.
+      default: ""
+      selector:
+        entity:
+          filter:
+            - integration: rain_radar_alarm
+              domain: camera
     notify_cleared:
       name: Also notify when the rain has cleared
       default: true
@@ -56,6 +68,7 @@ variables:
   only_when_away: !input only_when_away
   person_entity: !input person
   devices: !input notify_devices
+  radar_camera: !input radar_camera
 
 trigger:
   - platform: state
@@ -81,6 +94,12 @@ action:
       title: >
         {% if trigger.id == 'soon' %}Rain soon at {{ where }}{% else %}Rain has cleared at {{ where }}{% endif %}
       message: "{{ state_attr(status_entity, 'summary') }}"
+      push: >
+        {% set d = {'tag': 'rain-radar-alarm-' ~ status_entity, 'group': 'rain-radar-alarm'} %}
+        {% if trigger.id == 'soon' and radar_camera and has_value(radar_camera) %}
+          {% set d = dict(d, image='/api/camera_proxy/' ~ radar_camera, entity_id=radar_camera) %}
+        {% endif %}
+        {{ d }}
   - repeat:
       for_each: "{{ devices }}"
       sequence:
@@ -88,6 +107,4 @@ action:
           data:
             title: "{{ title }}"
             message: "{{ message }}"
-            data:
-              tag: "rain-radar-alarm-{{ status_entity }}"
-              group: rain-radar-alarm
+            data: "{{ push }}"

@@ -6,7 +6,7 @@ import struct
 import numpy as np
 from PIL import Image
 
-from custom_components.rain_radar_alarm.engine import Settings, bom, nowcast, openmeteo, sites
+from custom_components.rain_radar_alarm.engine import Settings, bom, nowcast, openmeteo, render, sites
 from custom_components.rain_radar_alarm.engine.motion import velocity_at
 from custom_components.rain_radar_alarm.engine.product import build_product
 
@@ -141,3 +141,22 @@ def test_open_meteo_fallback_timeline():
     ev = nowcast.derive_events(tl, hist, now, S)
     assert ev["status"] == "rain_expected" and 20 <= ev["minutes_until_rain"] <= 30
     assert ev["peak"]["rate"] == 4.8 and ev["peak"]["category"] == "moderate"
+
+
+def test_forecast_frame_moves_rain_with_the_storm():
+    p = storm()
+    box = render.crop_box(300, 256, N)
+    now = render.advect(p["levels"][-1], p["motion"], 0, box)
+    later = render.advect(p["levels"][-1], p["motion"], 20, box)
+    shift = np.nonzero(later.any(axis=0))[0].mean() - np.nonzero(now.any(axis=0))[0].mean()
+    assert abs(shift - SPEED_PX_MIN * 20) < 4          # 40 px east in 20 minutes
+    assert np.array_equal(now, p["levels"][-1][box[1]:box[3], box[0]:box[2]])
+
+
+def test_radar_loop_frames():
+    p = storm()
+    loop = render.radar_loop(p, {}, *point_at(300, 256), dt.timezone.utc)
+    assert len(loop.jpegs) == len(loop.durations_ms) == 12
+    gif = Image.open(io.BytesIO(loop.gif))
+    assert gif.n_frames == 12 and gif.info["loop"] == 0
+    assert render.radar_loop(p, {}, SITE["lat"] + 5, SITE["lon"], dt.timezone.utc) is None

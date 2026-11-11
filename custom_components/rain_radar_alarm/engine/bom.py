@@ -22,6 +22,7 @@ from PIL import Image
 FTP_HOST = "ftp.bom.gov.au"
 RADAR_DIR = "/anon/gen/radar"
 SPATIAL_DIR = "/anon/home/adfd/spatial"
+LAYERS_DIR = "/anon/gen/radar_transparencies"  # map layers matching each radar image
 RADAR_SITES_FILE = "IDR00007.dbf"   # BoM's radar locations table (dBase)
 FTP_TIMEOUT = 20
 IMAGE_SIZE = 512
@@ -107,6 +108,22 @@ def fetch(ftp: ftplib.FTP, filename: str) -> bytes:
     buf = io.BytesIO()
     ftp.retrbinary(f"RETR {filename}", buf.write)
     return buf.getvalue()
+
+
+def fetch_map_layers(radar_id: int, range_code: str, names) -> dict[str, bytes]:
+    """BoM's map layers for one radar image, e.g. IDR023.background.png. Missing ones are skipped."""
+    ftp = connect()
+    out: dict[str, bytes] = {}
+    try:
+        ftp.cwd(LAYERS_DIR)
+        for name in names:
+            try:
+                out[name] = fetch(ftp, f"IDR{radar_id:02d}{range_code}.{name}.png")
+            except ftplib.error_perm:  # "550": BoM doesn't publish this layer for this radar
+                continue
+    finally:
+        _quit(ftp)
+    return out
 
 
 def fetch_sites_table() -> bytes:

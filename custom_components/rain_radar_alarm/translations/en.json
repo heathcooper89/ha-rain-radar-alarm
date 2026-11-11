@@ -65,8 +65,17 @@
   },
   "entity": {
     "binary_sensor": {
-      "raining": { "name": "Raining" },
-      "rain_soon": { "name": "Rain soon" }
+      "raining": {
+        "name": "Raining"
+      },
+      "rain_soon": {
+        "name": "Rain soon"
+      }
+    },
+    "camera": {
+      "radar_map": {
+        "name": "Radar map"
+      }
     },
     "sensor": {
       "status": {
@@ -79,12 +88,24 @@
           "cleared": "Cleared"
         }
       },
-      "minutes_until_rain": { "name": "Minutes until rain" },
-      "minutes_until_clear": { "name": "Minutes until clear" },
-      "rain_start": { "name": "Rain starts" },
-      "rain_clear": { "name": "Rain clears" },
-      "rain_rate": { "name": "Rain rate" },
-      "peak_rain_rate": { "name": "Peak rain rate" },
+      "minutes_until_rain": {
+        "name": "Minutes until rain"
+      },
+      "minutes_until_clear": {
+        "name": "Minutes until clear"
+      },
+      "rain_start": {
+        "name": "Rain starts"
+      },
+      "rain_clear": {
+        "name": "Rain clears"
+      },
+      "rain_rate": {
+        "name": "Rain rate"
+      },
+      "peak_rain_rate": {
+        "name": "Peak rain rate"
+      },
       "intensity": {
         "name": "Intensity",
         "state": {
@@ -102,7 +123,9 @@
           "model": "Open-Meteo model"
         }
       },
-      "data_age": { "name": "Radar data age" }
+      "data_age": {
+        "name": "Radar data age"
+      }
     }
   },
   "issues": {

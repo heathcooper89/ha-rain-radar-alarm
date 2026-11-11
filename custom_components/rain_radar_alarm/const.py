@@ -32,6 +32,9 @@ RADAR_STALE_AFTER = timedelta(minutes=20)    # older than this is not used for a
 RADAR_MIN_RETRY = timedelta(minutes=2)       # never re-fetch one radar more often than this
 SITES_REFRESH = timedelta(days=7)
 ISSUE_AFTER_FAILURES = 3                     # consecutive failed polls before a repair issue
+MAP_LAYERS_REFRESH = timedelta(days=7)       # BoM's map layers for a radar rarely change
+MAP_LAYERS_RETRY = timedelta(hours=1)
+MAP_LOOPS_KEPT = 12                          # rendered loops kept in memory
 
 # Per-location recompute (cheap: no network unless a new radar or the fallback is needed).
 LOCATION_INTERVAL = timedelta(minutes=2)

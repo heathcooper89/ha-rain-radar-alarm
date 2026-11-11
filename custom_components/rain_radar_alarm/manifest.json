@@ -13,5 +13,5 @@
   "issue_tracker": "https://github.com/heathcooper89/ha-rain-radar-alarm/issues",
   "requirements": ["numpy>=1.26"],
   "single_config_entry": true,
-  "version": "1.0.1"
+  "version": "1.1.0"
 }

@@ -90,6 +90,9 @@ class FakeFTP:
 
     def retrbinary(self, cmd, callback):
         name = cmd.split(" ", 1)[1]
+        if name != "IDR00007.dbf" and name not in FakeFTP.files:
+            import ftplib
+            raise ftplib.error_perm("550 Failed to open file")
         FakeFTP.retrieved.append(name)
         callback(FakeFTP.files.get(name, DBF))
 
@@ -177,7 +180,7 @@ async def test_home_and_people(hass: HomeAssistant, aioclient_mock) -> None:
 
     # Heath is at home: same answer, and the radar frames were downloaded once only.
     assert hass.states.get(eid(hass, entry, "heath", "status")).state == "rain_expected"
-    frames = [n for n in FakeFTP.retrieved if n.endswith(".png")]
+    frames = [n for n in FakeFTP.retrieved if ".T." in n]
     assert len(frames) == len(set(frames)) == 6
 
     # Sam is in Perth: no radar in the table, so the Open-Meteo fallback answers.
@@ -338,3 +341,52 @@ async def test_first_download_right_after_boot(hass: HomeAssistant, aioclient_mo
     with patch("custom_components.rain_radar_alarm.radar.monotonic", return_value=30.0):
         entry = await _setup(hass, aioclient_mock)
         assert hass.states.get(eid(hass, entry, "home", "data_source")).state == "radar", why(entry)
+
+
+def layer_png(rgba) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGBA", (512, 512), rgba).save(buf, "PNG")
+    return buf.getvalue()
+
+
+async def test_radar_map_camera(hass: HomeAssistant, aioclient_mock, hass_client) -> None:
+    from homeassistant.components.camera import async_get_image
+
+    FakeFTP.files["IDR023.background.png"] = layer_png((90, 140, 90, 255))   # BoM map layer (fake)
+    entry = await _setup(hass, aioclient_mock, people={
+        "person.sam": ("not_home", {"latitude": PERTH[0], "longitude": PERTH[1], "friendly_name": "Sam"})})
+    cam = eid(hass, entry, "home", "radar_map", "camera")
+    assert cam == "camera.rain_radar_home_radar_map"
+    assert hass.states.get(cam).state == "idle"
+
+    image = await async_get_image(hass, cam)
+    assert image.content_type == "image/gif"
+    gif = Image.open(io.BytesIO(image.content))
+    assert gif.n_frames == 12 and gif.size == (400, 400)       # 6 recent + 6 forecast frames
+    gif.seek(0)
+    assert gif.convert("RGB").getpixel((5, 200)) == (90, 140, 90)  # map layer drawn under the rain
+
+    # Drawn once: the second request reuses the loop and the map layers.
+    again = await async_get_image(hass, cam)
+    assert again.content == image.content
+    assert FakeFTP.retrieved.count("IDR023.background.png") == 1
+    assert "IDR023.topography.png" not in FakeFTP.retrieved    # layers BoM doesn't have are skipped
+
+    # Sam is outside radar coverage: no radar map.
+    assert hass.states.get(eid(hass, entry, "sam", "radar_map", "camera")).state == "unavailable"
+
+    # Live view streams the frames one by one as JPEG.
+    client = await hass_client()
+    resp = await client.get(f"/api/camera_proxy_stream/{cam}")
+    assert resp.status == 200
+    chunk = await asyncio.wait_for(resp.content.read(4096), 5)
+    assert b"Content-Type: image/jpeg" in chunk
+    resp.close()
+
+
+async def test_radar_map_without_map_layers(hass: HomeAssistant, aioclient_mock) -> None:
+    from homeassistant.components.camera import async_get_image
+
+    entry = await _setup(hass, aioclient_mock)
+    image = await async_get_image(hass, eid(hass, entry, "home", "radar_map", "camera"))
+    assert Image.open(io.BytesIO(image.content)).n_frames == 12

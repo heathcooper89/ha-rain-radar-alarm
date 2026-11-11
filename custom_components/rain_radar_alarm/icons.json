@@ -3,7 +3,14 @@
     "binary_sensor": {
       "rain_soon": {
         "default": "mdi:umbrella-outline",
-        "state": { "on": "mdi:umbrella-alert" }
+        "state": {
+          "on": "mdi:umbrella-alert"
+        }
+      }
+    },
+    "camera": {
+      "radar_map": {
+        "default": "mdi:radar"
       }
     },
     "sensor": {
@@ -17,16 +24,30 @@
           "cleared": "mdi:weather-cloudy-clock"
         }
       },
-      "minutes_until_rain": { "default": "mdi:timer-sand" },
-      "minutes_until_clear": { "default": "mdi:timer-sand-complete" },
-      "rain_start": { "default": "mdi:weather-rainy" },
-      "rain_clear": { "default": "mdi:weather-partly-cloudy" },
-      "intensity": { "default": "mdi:weather-pouring" },
+      "minutes_until_rain": {
+        "default": "mdi:timer-sand"
+      },
+      "minutes_until_clear": {
+        "default": "mdi:timer-sand-complete"
+      },
+      "rain_start": {
+        "default": "mdi:weather-rainy"
+      },
+      "rain_clear": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "intensity": {
+        "default": "mdi:weather-pouring"
+      },
       "data_source": {
         "default": "mdi:radar",
-        "state": { "model": "mdi:cloud-outline" }
+        "state": {
+          "model": "mdi:cloud-outline"
+        }
       },
-      "data_age": { "default": "mdi:clock-outline" }
+      "data_age": {
+        "default": "mdi:clock-outline"
+      }
     }
   }
 }
