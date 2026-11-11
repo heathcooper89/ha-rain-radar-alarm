@@ -1,0 +1,93 @@
+blueprint:
+  name: Rain Radar Alarm – phone notifications
+  description: >
+    Notify phones when rain is about to arrive at a person or at home, and again when it has
+    cleared. Pick the "Rain soon" and "Status" entities from the same Rain radar device
+    (e.g. Rain radar Home, or Rain radar <person>). "Rain soon" turns on according to the
+    minutes set in the Rain Radar Alarm integration options.
+  domain: automation
+  input:
+    rain_soon:
+      name: Rain soon sensor
+      selector:
+        entity:
+          filter:
+            - integration: rain_radar_alarm
+              domain: binary_sensor
+    status:
+      name: Status sensor
+      selector:
+        entity:
+          filter:
+            - integration: rain_radar_alarm
+              domain: sensor
+    notify_devices:
+      name: Phones to notify
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+    notify_cleared:
+      name: Also notify when the rain has cleared
+      default: true
+      selector:
+        boolean: {}
+    only_when_away:
+      name: For a person, only notify when they are away from home
+      description: Leave off for the home location.
+      default: false
+      selector:
+        boolean: {}
+    person:
+      name: Person (only needed for "only when away")
+      default: ""
+      selector:
+        entity:
+          filter:
+            - domain: person
+
+mode: single
+max_exceeded: silent
+
+variables:
+  status_entity: !input status
+  notify_cleared: !input notify_cleared
+  only_when_away: !input only_when_away
+  person_entity: !input person
+  devices: !input notify_devices
+
+trigger:
+  - platform: state
+    entity_id: !input rain_soon
+    from: "off"
+    to: "on"
+    id: soon
+  - platform: state
+    entity_id: !input status
+    to: cleared
+    id: cleared
+
+condition:
+  - condition: template
+    value_template: >
+      {{ not only_when_away or person_entity == '' or not is_state(person_entity, 'home') }}
+  - condition: template
+    value_template: "{{ trigger.id == 'soon' or notify_cleared }}"
+
+action:
+  - variables:
+      where: "{{ state_attr(status_entity, 'location_name') or 'your location' }}"
+      title: >
+        {% if trigger.id == 'soon' %}Rain soon at {{ where }}{% else %}Rain has cleared at {{ where }}{% endif %}
+      message: "{{ state_attr(status_entity, 'summary') }}"
+  - repeat:
+      for_each: "{{ devices }}"
+      sequence:
+        - action: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+          data:
+            title: "{{ title }}"
+            message: "{{ message }}"
+            data:
+              tag: "rain-radar-alarm-{{ status_entity }}"
+              group: rain-radar-alarm

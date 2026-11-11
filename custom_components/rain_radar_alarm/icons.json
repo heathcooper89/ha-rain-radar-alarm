@@ -1,0 +1,32 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "rain_soon": {
+        "default": "mdi:umbrella-outline",
+        "state": { "on": "mdi:umbrella-alert" }
+      }
+    },
+    "sensor": {
+      "status": {
+        "default": "mdi:weather-cloudy",
+        "state": {
+          "dry": "mdi:weather-partly-cloudy",
+          "rain_expected": "mdi:weather-cloudy-alert",
+          "raining": "mdi:weather-pouring",
+          "clearing": "mdi:weather-partly-rainy",
+          "cleared": "mdi:weather-cloudy-clock"
+        }
+      },
+      "minutes_until_rain": { "default": "mdi:timer-sand" },
+      "minutes_until_clear": { "default": "mdi:timer-sand-complete" },
+      "rain_start": { "default": "mdi:weather-rainy" },
+      "rain_clear": { "default": "mdi:weather-partly-cloudy" },
+      "intensity": { "default": "mdi:weather-pouring" },
+      "data_source": {
+        "default": "mdi:radar",
+        "state": { "model": "mdi:cloud-outline" }
+      },
+      "data_age": { "default": "mdi:clock-outline" }
+    }
+  }
+}
