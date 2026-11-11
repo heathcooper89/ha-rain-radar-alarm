@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Callable
 import datetime as dt
 import logging
-import time
+from time import monotonic
 from typing import Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -122,17 +122,19 @@ class RadarManager:
 
     async def async_product(self, radar_id: int) -> dict | None:
         """The radar's product, fetching it first if it's missing or stale."""
-        self._needed[radar_id] = time.monotonic()
+        self._needed[radar_id] = monotonic()
         product = self.products.get(radar_id)
         if self.is_fresh(product):
             return product
-        last = self._last_try.get(radar_id, 0.0)
-        if time.monotonic() - last >= RADAR_MIN_RETRY.total_seconds():
+        # No "last try" means never tried. (The monotonic clock starts near zero at boot, so a
+        # default of 0 would block the first download for a couple of minutes after a reboot.)
+        last = self._last_try.get(radar_id)
+        if last is None or monotonic() - last >= RADAR_MIN_RETRY.total_seconds():
             await self._async_fetch([radar_id])
         return self.products.get(radar_id)
 
     async def _async_poll(self, _now: dt.datetime | None = None) -> None:
-        cutoff = time.monotonic() - RADAR_IDLE_AFTER.total_seconds()
+        cutoff = monotonic() - RADAR_IDLE_AFTER.total_seconds()
         for rid in [r for r, t in self._needed.items() if t < cutoff]:
             self._needed.pop(rid, None)
             self.products.pop(rid, None)      # free memory for radars nobody needs
@@ -144,7 +146,7 @@ class RadarManager:
     async def _async_fetch(self, radar_ids: list[int]) -> bool:
         """Download new frames for these radars. True if any product changed."""
         async with self._lock:
-            now = time.monotonic()
+            now = monotonic()
             if now < self._retry_after:
                 return False
             for rid in radar_ids:
@@ -203,7 +205,7 @@ class RadarManager:
         self.last_error = message
         # 5, 10, 20, 40 then 60 minutes between attempts while BoM can't be reached.
         wait = min(RADAR_POLL.total_seconds() * 2 ** (self._failures - 1), 3600)
-        self._retry_after = time.monotonic() + wait
+        self._retry_after = monotonic() + wait
         _LOGGER.warning("BoM radar download failed (%d in a row): %s", self._failures, message)
         if self._failures == ISSUE_AFTER_FAILURES:
             ir.async_create_issue(
@@ -224,15 +226,15 @@ class RadarManager:
         lock = self._fallback_locks.setdefault(cell, asyncio.Lock())
         async with lock:
             hit = self._fallback.get(cell)
-            if hit and hit[0] > time.monotonic():
+            if hit and hit[0] > monotonic():
                 return hit[1]
             session = async_get_clientsession(self.hass)
             async with asyncio.timeout(15):
                 resp = await session.get(openmeteo.URL, params=openmeteo.params(lat, lon, self.settings))
                 resp.raise_for_status()
                 data = await resp.json()
-            self._fallback[cell] = (time.monotonic() + FALLBACK_CACHE.total_seconds(), data)
-            now = time.monotonic()
+            self._fallback[cell] = (monotonic() + FALLBACK_CACHE.total_seconds(), data)
+            now = monotonic()
             for k in [k for k, v in self._fallback.items() if v[0] < now]:
                 self._fallback.pop(k, None)
             return data
@@ -258,7 +260,7 @@ class RadarManager:
             "radars_in_use": sorted(self._needed),
             "last_poll": self.last_poll.isoformat() if self.last_poll else None,
             "consecutive_failures": self._failures,
-            "retry_in_seconds": max(0, round(self._retry_after - time.monotonic())),
+            "retry_in_seconds": max(0, round(self._retry_after - monotonic())),
             "last_error": self.last_error,
             "radars": radars,
         }

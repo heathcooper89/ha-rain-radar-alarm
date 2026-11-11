@@ -331,3 +331,10 @@ async def test_removal_deletes_saved_radar_list(hass: HomeAssistant, aioclient_m
     assert await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert f"{DOMAIN}.radar_sites" not in hass_storage
+
+
+async def test_first_download_right_after_boot(hass: HomeAssistant, aioclient_mock) -> None:
+    """Just after the computer starts, the monotonic clock is near zero; radar must still load."""
+    with patch("custom_components.rain_radar_alarm.radar.monotonic", return_value=30.0):
+        entry = await _setup(hass, aioclient_mock)
+        assert hass.states.get(eid(hass, entry, "home", "data_source")).state == "radar", why(entry)
