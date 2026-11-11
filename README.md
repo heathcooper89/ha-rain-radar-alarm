@@ -74,7 +74,6 @@ People are followed using their phone's location from the Home Assistant Compani
 4. **Motion:** for each radar, the last few frames show how the rain is moving: speed and direction in 128-pixel tiles, so a front and a storm cell 100 km apart can move differently. This is done once per radar per new frame.
 5. **Forecast:** each location traces the air arriving at it back along that motion and reads the latest radar there, every 5 minutes out to 2 hours, in a circle that widens with time to allow for uncertainty. About 2 ms per location.
 6. **Fallback:** if no radar covers a place, or BoM can't be reached, the Open-Meteo 15-minute forecast is used if you've left it on.
-
 7. **Radar map:** drawn only when someone looks at it, from frames already downloaded, and reused until BoM publishes a new frame.
 
 Everyone under one radar shares one download and one motion calculation. A person moving more than 750 m gets a new forecast straight away.
