@@ -116,7 +116,7 @@ pytest
 
 The tests run the integration inside Home Assistant with a fake BoM FTP server serving a synthetic storm, and a faked Open-Meteo. They cover setup, the terms confirmation, people at home, away and without a location, a person moving into the rain, the fallback, a BoM outage and its repair notice, diagnostics, options, and the blueprint. Engine tests check motion recovery and arrival and clearing times on storms of known speed.
 
-`docs/icon-options/generate_icons.py` draws the icon options; `--brand A` (or B, C, D) writes the chosen one into `brand/`.
+`docs/icon-options/generate_icons.py` draws the icon options; `--brand B` writes the chosen icon (option B, Radar scope) into `brand/`; A, C or D work the same way.
 
 ## Licence
 
