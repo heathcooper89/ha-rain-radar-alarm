@@ -133,6 +133,12 @@ async def _setup(hass, aioclient_mock, people=None, options=None):
     return entry
 
 
+def why(entry) -> str:
+    """Radar state to show when an assertion fails."""
+    m = entry.runtime_data.manager
+    return f"sites={len(m.registry)} products={list(m.products)} error={m.last_error} ftp={FakeFTP.retrieved}"
+
+
 def eid(hass, entry, loc, key, domain="sensor"):
     return er.async_get(hass).async_get_entity_id(domain, DOMAIN, f"{entry.entry_id}_{loc}_{key}")
 
@@ -163,10 +169,10 @@ async def test_home_and_people(hass: HomeAssistant, aioclient_mock) -> None:
     assert status.state == "rain_expected", status.attributes
     assert status.attributes["summary"].startswith(("Moderate", "Heavy"))
     minutes = int(hass.states.get(eid(hass, entry, "home", "minutes_until_rain")).state)
-    assert 20 <= minutes <= 40
-    assert hass.states.get(eid(hass, entry, "home", "rain_soon", "binary_sensor")).state == "off"
+    assert 20 <= minutes <= 40, why(entry)
+    assert hass.states.get(eid(hass, entry, "home", "rain_soon", "binary_sensor")).state == "off", why(entry)
     src = hass.states.get(eid(hass, entry, "home", "data_source"))
-    assert src.state == "radar" and src.attributes["radar_id"] == "IDR023"
+    assert src.state == "radar" and src.attributes["radar_id"] == "IDR023", why(entry)
     assert "Bureau of Meteorology" in src.attributes["attribution"]
 
     # Heath is at home: same answer, and the radar frames were downloaded once only.
@@ -207,7 +213,7 @@ async def test_moving_person_and_events(hass: HomeAssistant, aioclient_mock) -> 
     await hass.async_block_till_done()
     async_fire_time_changed(hass, dt_util.utcnow() + dt.timedelta(seconds=15))
     await hass.async_block_till_done()
-    assert hass.states.get(eid(hass, entry, "sam", "data_source")).state == "radar"
+    assert hass.states.get(eid(hass, entry, "sam", "data_source")).state == "radar", why(entry)
     assert hass.states.get(eid(hass, entry, "sam", "raining", "binary_sensor")).state == "on"
     assert events and events[-1].data["person"] == "person.sam"
     assert events[-1].data["previous_status"] == "rain_expected"
@@ -238,6 +244,7 @@ async def test_diagnostics(hass: HomeAssistant, aioclient_mock) -> None:
     entry = await _setup(hass, aioclient_mock, people={
         "person.heath": ("home", {"friendly_name": "Heath"})})
     diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert "IDR023" in diag["radar"]["radars"], why(entry)
     radar = diag["radar"]["radars"]["IDR023"]
     assert radar["frames"] == 6
     assert radar["palette_check"]["opaque_pixels"] == radar["palette_check"]["matched_pixels"] > 0
@@ -287,7 +294,7 @@ async def test_server_without_name_patterns(hass: HomeAssistant, aioclient_mock)
 
     with patch.object(FakeFTP, "nlst", no_patterns):
         entry = await _setup(hass, aioclient_mock)
-    assert hass.states.get(eid(hass, entry, "home", "data_source")).state == "radar"
+    assert hass.states.get(eid(hass, entry, "home", "data_source")).state == "radar", why(entry)
 
 
 async def test_new_person_is_picked_up(hass: HomeAssistant, aioclient_mock) -> None:
